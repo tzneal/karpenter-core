@@ -91,9 +91,11 @@ func (m *Machine) Add(ctx context.Context, pod *v1.Pod) error {
 
 	// Check instance type combinations
 	requests := resources.Merge(m.Requests, resources.RequestsForPods(pod))
-	instanceTypes := filterInstanceTypesByRequirements(m.InstanceTypeOptions, machineRequirements, requests)
+	beforeOptsCount := len(m.InstanceTypeOptions)
+	instanceTypes, errors := filterInstanceTypesByRequirements(m.InstanceTypeOptions, machineRequirements, requests)
 	if len(instanceTypes) == 0 {
-		return fmt.Errorf("no instance type satisfied resources %s and requirements %s", resources.String(resources.RequestsForPods(pod)), machineRequirements)
+		return fmt.Errorf("no instance type satisfied resources %s and requirements %s [had %d] (%v)",
+			resources.String(resources.RequestsForPods(pod)), machineRequirements, beforeOptsCount, errors)
 	}
 
 	// Update node
@@ -134,10 +136,30 @@ func InstanceTypeList(instanceTypeOptions []*cloudprovider.InstanceType) string 
 	return itSb.String()
 }
 
-func filterInstanceTypesByRequirements(instanceTypes []*cloudprovider.InstanceType, requirements scheduling.Requirements, requests v1.ResourceList) []*cloudprovider.InstanceType {
-	return lo.Filter(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) bool {
+func filterInstanceTypesByRequirements(instanceTypes []*cloudprovider.InstanceType, requirements scheduling.Requirements, requests v1.ResourceList) ([]*cloudprovider.InstanceType, []string) {
+
+	var errors []string
+	incompatCount := 0
+	fitsCount := 0
+	hasOfferingCount := 0
+
+	results := lo.Filter(instanceTypes, func(instanceType *cloudprovider.InstanceType, _ int) bool {
+		if !compatible(instanceType, requirements) {
+			incompatCount++
+			//errors = append(errors, fmt.Sprintf("%s incompatible with %v vs %v", instanceType.Name, instanceType.Requirements, requirements))
+		}
+		if !fits(instanceType, requests) {
+			fitsCount++
+			//errors = append(errors, fmt.Sprintf("%s doesn't fit with %v vs %v", instanceType.Name, instanceType.Allocatable(), requests))
+		}
+		if !hasOffering(instanceType, requirements) {
+			hasOfferingCount++
+			//errors = append(errors, fmt.Sprintf("%s doesn't have offering with %v vs %v", instanceType.Name, requirements, instanceType.Offerings))
+		}
 		return compatible(instanceType, requirements) && fits(instanceType, requests) && hasOffering(instanceType, requirements)
 	})
+	errors = append(errors, fmt.Sprintf("%d incompatibile, %d won't fit, %d no offerings", incompatCount, fitsCount, hasOfferingCount))
+	return results, errors
 }
 
 func compatible(instanceType *cloudprovider.InstanceType, requirements scheduling.Requirements) bool {
