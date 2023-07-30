@@ -36,6 +36,8 @@ import (
 	"github.com/aws/karpenter-core/pkg/scheduling"
 )
 
+const maxConsolidationTime = 30 * time.Second
+
 // consolidation is the base consolidation controller that provides common functionality used across the different
 // consolidation methods.
 type consolidation struct {

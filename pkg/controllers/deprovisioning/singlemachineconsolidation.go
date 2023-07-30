@@ -17,6 +17,7 @@ package deprovisioning
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"k8s.io/utils/clock"
 	"knative.dev/pkg/logging"
@@ -51,7 +52,14 @@ func (c *SingleMachineConsolidation) ComputeCommand(ctx context.Context, candida
 	deprovisioningEligibleMachinesGauge.WithLabelValues(c.String()).Set(float64(len(candidates)))
 
 	v := NewValidation(consolidationTTL, c.clock, c.cluster, c.kubeClient, c.provisioner, c.cloudProvider, c.recorder)
-	for _, candidate := range candidates {
+	start := time.Now()
+
+	for i, candidate := range candidates {
+		// always check at least 25 nodes
+		if i > 25 && time.Since(start) > maxConsolidationTime {
+			return Command{}, nil
+		}
+
 		// compute a possible consolidation option
 		cmd, err := c.computeConsolidation(ctx, candidate)
 		if err != nil {

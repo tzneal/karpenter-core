@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
@@ -50,8 +51,8 @@ func (m *MultiMachineConsolidation) ComputeCommand(ctx context.Context, candidat
 	}
 	deprovisioningEligibleMachinesGauge.WithLabelValues(m.String()).Set(float64(len(candidates)))
 
-	// For now, we will consider up to every machine in the cluster, might be configurable in the future.
-	maxParallel := len(candidates)
+	// Consider up to 50 candidates at a time
+	maxParallel := 50
 	cmd, err := m.firstNMachineConsolidationOption(ctx, candidates, maxParallel)
 	if err != nil {
 		return Command{}, err
@@ -88,9 +89,14 @@ func (m *MultiMachineConsolidation) firstNMachineConsolidationOption(ctx context
 		max = len(candidates) - 1
 	}
 
+	start := time.Now()
 	lastSavedCommand := Command{}
 	// binary search to find the maximum number of machines we can terminate
 	for min <= max {
+		if time.Since(start) > maxConsolidationTime {
+			return lastSavedCommand, nil
+		}
+
 		mid := (min + max) / 2
 
 		candidatesToConsolidate := candidates[0 : mid+1]
