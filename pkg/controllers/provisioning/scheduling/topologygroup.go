@@ -65,7 +65,7 @@ type TopologyGroup struct {
 	domains map[string]int32       // TODO(ellistarn) explore replacing with a minheap
 }
 
-func NewTopologyGroup(topologyType TopologyType, topologyKey string, pod *v1.Pod, namespaces sets.Set[string], labelSelector *metav1.LabelSelector, maxSkew int32, minDomains *int32, domains sets.Set[string]) *TopologyGroup {
+func NewTopologyGroup(topologyType TopologyType, topologyKey string, pod *v1.Pod, namespaces sets.Set[string], labelSelector *metav1.LabelSelector, maxSkew int32, minDomains *int32, taintPolicy *v1.NodeInclusionPolicy, affinityPolicy *v1.NodeInclusionPolicy, domains sets.Set[string]) *TopologyGroup {
 	domainCounts := map[string]int32{}
 	for domain := range domains {
 		domainCounts[domain] = 0
@@ -73,8 +73,17 @@ func NewTopologyGroup(topologyType TopologyType, topologyKey string, pod *v1.Pod
 	// the nil *TopologyNodeFilter always passes which is what we need for affinity/anti-affinity
 	var nodeSelector TopologyNodeFilter
 	if topologyType == TopologyTypeSpread {
-		nodeSelector = MakeTopologyNodeFilter(pod)
+		nodeTaintsPolicy := v1.NodeInclusionPolicyIgnore
+		if taintPolicy != nil {
+			nodeTaintsPolicy = *taintPolicy
+		}
+		nodeAffinityPolicy := v1.NodeInclusionPolicyHonor
+		if affinityPolicy != nil {
+			nodeAffinityPolicy = *affinityPolicy
+		}
+		nodeSelector = MakeTopologyNodeFilter(pod, nodeTaintsPolicy, nodeAffinityPolicy)
 	}
+
 	return &TopologyGroup{
 		Type:       topologyType,
 		Key:        topologyKey,
